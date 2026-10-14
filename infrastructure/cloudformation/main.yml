@@ -1,0 +1,559 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Book Worm E-Commerce Platform - Production-Ready Infrastructure Stack
+  Deploys Amazon ECR, RDS PostgreSQL 15 (Multi-AZ), AWS Secrets Manager,
+  AWS App Runner Service with VPC Connector, IAM Roles, KMS CMK, and CloudWatch Logs.
+
+# ==============================================================================
+# Parameters
+# ==============================================================================
+Parameters:
+  Environment:
+    Type: String
+    Default: prod
+    AllowedValues:
+      - dev
+      - staging
+      - prod
+    Description: Deployment target environment (dev, staging, prod).
+
+  AppName:
+    Type: String
+    Default: book-worm-backend
+    Description: Application name used for resource naming and tagging.
+
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: Target VPC ID for database and App Runner VPC Connector.
+
+  PrivateAppSubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: List of at least two Private Application Subnet IDs for App Runner VPC Connector.
+
+  IsolatedDbSubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: List of at least two Isolated Database Subnet IDs for RDS Multi-AZ Subnet Group.
+
+  ContainerImageTag:
+    Type: String
+    Default: latest
+    Description: ECR Docker image tag to deploy for the App Runner service.
+
+  DbAllocatedStorageGB:
+    Type: Number
+    Default: 100
+    MinValue: 20
+    MaxValue: 1000
+    Description: Allocated gp3 storage in GB for the RDS PostgreSQL database.
+
+  JwtSecretSeed:
+    Type: String
+    NoEcho: true
+    Default: bookworm-production-secure-jwt-signing-secret-key-must-be-256-bits-minimum!
+    Description: Initial JWT signing secret (min 256 bits).
+
+# ==============================================================================
+# Environment-Specific Mappings
+# ==============================================================================
+Mappings:
+  EnvironmentConfig:
+    dev:
+      DbInstanceClass: db.t4g.medium
+      DbMultiAz: false
+      DbDeletionProtection: false
+      DbBackupRetentionDays: 7
+      AppRunnerCpu: 1024
+      AppRunnerMemory: 2048
+      AppRunnerMinInstances: 1
+      AppRunnerMaxInstances: 3
+      AppRunnerMaxConcurrency: 100
+      LogRetentionDays: 14
+    staging:
+      DbInstanceClass: db.t4g.large
+      DbMultiAz: true
+      DbDeletionProtection: false
+      DbBackupRetentionDays: 14
+      AppRunnerCpu: 2048
+      AppRunnerMemory: 4096
+      AppRunnerMinInstances: 2
+      AppRunnerMaxInstances: 5
+      AppRunnerMaxConcurrency: 100
+      LogRetentionDays: 30
+    prod:
+      DbInstanceClass: db.r6g.large
+      DbMultiAz: true
+      DbDeletionProtection: true
+      DbBackupRetentionDays: 30
+      AppRunnerCpu: 2048
+      AppRunnerMemory: 4096
+      AppRunnerMinInstances: 2
+      AppRunnerMaxInstances: 10
+      AppRunnerMaxConcurrency: 100
+      LogRetentionDays: 90
+
+Conditions:
+  IsProduction: !Equals [!Ref Environment, 'prod']
+
+# ==============================================================================
+# Resources
+# ==============================================================================
+Resources:
+
+  # ----------------------------------------------------------------------------
+  # 1. KMS Customer Managed Key (CMK) for Encryption at Rest
+  # ----------------------------------------------------------------------------
+  KmsEncryptionKey:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: !Sub 'KMS CMK for Book Worm ${Environment} encryption at rest'
+      EnableKeyRotation: true
+      KeyPolicy:
+        Version: '2012-10-17'
+        Id: KeyPolicy-BookWorm
+        Statement:
+          - Sid: EnableRootAccess
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:aws:iam::${AWS::AccountId}:root'
+            Action: 'kms:*'
+            Resource: '*'
+          - Sid: AllowCloudWatchLogs
+            Effect: Allow
+            Principal:
+              Service: !Sub 'logs.${AWS::Region}.amazonaws.com'
+            Action:
+              - 'kms:Encrypt*'
+              - 'kms:Decrypt*'
+              - 'kms:ReEncrypt*'
+              - 'kms:GenerateDataKey*'
+              - 'kms:DescribeKey'
+            Resource: '*'
+            Condition:
+              ArnLike:
+                kms:EncryptionContext:aws:logs:arn: !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:*'
+          - Sid: AllowSecretsManagerAndRDS
+            Effect: Allow
+            Principal:
+              Service:
+                - 'secretsmanager.amazonaws.com'
+                - 'rds.amazonaws.com'
+            Action:
+              - 'kms:Encrypt*'
+              - 'kms:Decrypt*'
+              - 'kms:GenerateDataKey*'
+            Resource: '*'
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Application
+          Value: !Ref AppName
+
+  KmsKeyAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: !Sub 'alias/${AppName}-${Environment}-cmk'
+      TargetKeyId: !Ref KmsEncryptionKey
+
+  # ----------------------------------------------------------------------------
+  # 2. Amazon ECR Repository with Immutable Tags & Security Scanning
+  # ----------------------------------------------------------------------------
+  EcrRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Sub '${AppName}-${Environment}'
+      ImageTagMutability: IMMUTABLE
+      ImageScanningConfiguration:
+        ScanOnPush: true
+      EncryptionConfiguration:
+        EncryptionType: KMS
+        KmsKey: !GetAtt KmsEncryptionKey.Arn
+      LifecyclePolicy:
+        LifecyclePolicyText: |
+          {
+            "rules": [
+              {
+                "rulePriority": 1,
+                "description": "Retain last 30 tagged production images",
+                "selection": {
+                  "tagStatus": "any",
+                  "countType": "imageCountMoreThan",
+                  "countNumber": 30
+                },
+                "action": {
+                  "type": "expire"
+                }
+              }
+            ]
+          }
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Application
+          Value: !Ref AppName
+
+  # ----------------------------------------------------------------------------
+  # 3. CloudWatch Log Group with Encryption & Retention
+  # ----------------------------------------------------------------------------
+  ApplicationLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/apprunner/${AppName}-${Environment}'
+      RetentionInDays: !FindInMap [EnvironmentConfig, !Ref Environment, LogRetentionDays]
+      KmsKeyId: !GetAtt KmsEncryptionKey.Arn
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Application
+          Value: !Ref AppName
+
+  # ----------------------------------------------------------------------------
+  # 4. AWS Secrets Manager (Database Master Credentials & App Secrets)
+  # ----------------------------------------------------------------------------
+  DatabaseSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub '${AppName}/${Environment}/database'
+      Description: !Sub 'RDS PostgreSQL credentials for Book Worm ${Environment}'
+      KmsKeyId: !GetAtt KmsEncryptionKey.Arn
+      GenerateSecretString:
+        SecretStringTemplate: '{"username": "bookworm_admin"}'
+        GenerateStringKey: 'password'
+        PasswordLength: 32
+        ExcludeCharacters: '"@/\ '
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Application
+          Value: !Ref AppName
+
+  ApplicationSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub '${AppName}/${Environment}/app'
+      Description: !Sub 'Application security keys and tokens for Book Worm ${Environment}'
+      KmsKeyId: !GetAtt KmsEncryptionKey.Arn
+      SecretString: !Sub |
+        {
+          "JWT_SECRET": "${JwtSecretSeed}"
+        }
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Application
+          Value: !Ref AppName
+
+  # ----------------------------------------------------------------------------
+  # 5. Security Groups
+  # ----------------------------------------------------------------------------
+  AppRunnerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub 'Security group for App Runner VPC Connector (${Environment})'
+      VpcId: !Ref VpcId
+      SecurityGroupEgress:
+        - IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+          DestinationSecurityGroupId: !GetAtt DatabaseSecurityGroup.GroupId
+          Description: Allow outbound JDBC traffic to RDS PostgreSQL
+      Tags:
+        - Key: Name
+          Value: !Sub '${AppName}-${Environment}-apprunner-sg'
+        - Key: Environment
+          Value: !Ref Environment
+
+  DatabaseSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub 'Security group for RDS PostgreSQL Database (${Environment})'
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+          SourceSecurityGroupId: !GetAtt AppRunnerSecurityGroup.GroupId
+          Description: Allow inbound JDBC traffic strictly from App Runner VPC Connector
+      Tags:
+        - Key: Name
+          Value: !Sub '${AppName}-${Environment}-rds-sg'
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ----------------------------------------------------------------------------
+  # 6. RDS PostgreSQL Database
+  # ----------------------------------------------------------------------------
+  DatabaseSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupName: !Sub '${AppName}-${Environment}-db-subnet-group'
+      DBSubnetGroupDescription: !Sub 'Isolated Subnets for ${AppName} RDS (${Environment})'
+      SubnetIds: !Ref IsolatedDbSubnetIds
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+
+  DatabaseParameterGroup:
+    Type: AWS::RDS::DBParameterGroup
+    Properties:
+      Family: postgres15
+      Description: Parameter group for Book Worm PostgreSQL 15
+      Parameters:
+        rds.force_ssl: '1'
+        log_connections: '1'
+        log_disconnections: '1'
+        log_duration: '1'
+        shared_preload_libraries: 'pg_stat_statements'
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+
+  DatabaseInstance:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBInstanceIdentifier: !Sub '${AppName}-${Environment}-db'
+      DBName: bookworm_db
+      Engine: postgres
+      EngineVersion: '15.6'
+      DBInstanceClass: !FindInMap [EnvironmentConfig, !Ref Environment, DbInstanceClass]
+      AllocatedStorage: !Ref DbAllocatedStorageGB
+      MaxAllocatedStorage: 500
+      StorageType: gp3
+      StorageEncrypted: true
+      KmsKeyId: !GetAtt KmsEncryptionKey.Arn
+      MultiAZ: !FindInMap [EnvironmentConfig, !Ref Environment, DbMultiAz]
+      PubliclyAccessible: false
+      AutoMinorVersionUpgrade: true
+      DeletionProtection: !FindInMap [EnvironmentConfig, !Ref Environment, DbDeletionProtection]
+      BackupRetentionPeriod: !FindInMap [EnvironmentConfig, !Ref Environment, DbBackupRetentionDays]
+      PreferredBackupWindow: '02:00-03:00'
+      PreferredMaintenanceWindow: 'Sun:03:30-Sun:04:30'
+      DBSubnetGroupName: !Ref DatabaseSubnetGroup
+      DBParameterGroupName: !Ref DatabaseParameterGroup
+      VPCSecurityGroups:
+        - !GetAtt DatabaseSecurityGroup.GroupId
+      MasterUsername: !Sub '{{resolve:secretsmanager:${DatabaseSecret}:SecretString:username}}'
+      MasterUserPassword: !Sub '{{resolve:secretsmanager:${DatabaseSecret}:SecretString:password}}'
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Application
+          Value: !Ref AppName
+
+  # ----------------------------------------------------------------------------
+  # 7. IAM Roles (ECR Access & App Runner Instance Role)
+  # ----------------------------------------------------------------------------
+  AppRunnerEcrAccessRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${AppName}-${Environment}-apprunner-ecr-access-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: build.apprunner.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: EcrImagePullPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:BatchGetImage
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:DescribeImages
+                Resource: !GetAtt EcrRepository.Arn
+              - Effect: Allow
+                Action:
+                  - ecr:GetAuthorizationToken
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - kms:Decrypt
+                Resource: !GetAtt KmsEncryptionKey.Arn
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+
+  AppRunnerInstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${AppName}-${Environment}-apprunner-instance-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: tasks.apprunner.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: SecretsAndKmsAccessPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                  - secretsmanager:DescribeSecret
+                Resource:
+                  - !Ref DatabaseSecret
+                  - !Ref ApplicationSecret
+              - Effect: Allow
+                Action:
+                  - kms:Decrypt
+                  - kms:GenerateDataKey
+                Resource: !GetAtt KmsEncryptionKey.Arn
+        - PolicyName: CloudWatchAndXRayPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                  - logs:DescribeLogStreams
+                Resource: !Sub '${ApplicationLogGroup.Arn}:*'
+              - Effect: Allow
+                Action:
+                  - xray:PutTraceSegments
+                  - xray:PutTelemetryRecords
+                  - xray:GetSamplingRules
+                  - xray:GetSamplingTargets
+                  - xray:GetSamplingStatisticSummaries
+                Resource: '*'
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ----------------------------------------------------------------------------
+  # 8. App Runner Observability & AutoScaling Configuration
+  # ----------------------------------------------------------------------------
+  AppRunnerObservabilityConfig:
+    Type: AWS::AppRunner::ObservabilityConfiguration
+    Properties:
+      ObservabilityConfigurationName: !Sub '${AppName}-${Environment}-tracing'
+      TraceConfiguration:
+        Vendor: AWSXRAY
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+
+  AppRunnerAutoScalingConfig:
+    Type: AWS::AppRunner::AutoScalingConfiguration
+    Properties:
+      AutoScalingConfigurationName: !Sub '${AppName}-${Environment}-autoscaling'
+      MinSize: !FindInMap [EnvironmentConfig, !Ref Environment, AppRunnerMinInstances]
+      MaxSize: !FindInMap [EnvironmentConfig, !Ref Environment, AppRunnerMaxInstances]
+      MaxConcurrency: !FindInMap [EnvironmentConfig, !Ref Environment, AppRunnerMaxConcurrency]
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ----------------------------------------------------------------------------
+  # 9. App Runner VPC Connector
+  # ----------------------------------------------------------------------------
+  AppRunnerVpcConnector:
+    Type: AWS::AppRunner::VpcConnector
+    Properties:
+      VpcConnectorName: !Sub '${AppName}-${Environment}-vpc-connector'
+      Subnets: !Ref PrivateAppSubnetIds
+      SecurityGroups:
+        - !GetAtt AppRunnerSecurityGroup.GroupId
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ----------------------------------------------------------------------------
+  # 10. AWS App Runner Service
+  # ----------------------------------------------------------------------------
+  AppRunnerService:
+    Type: AWS::AppRunner::Service
+    Properties:
+      ServiceName: !Sub '${AppName}-${Environment}'
+      AutoScalingConfigurationArn: !GetAtt AppRunnerAutoScalingConfig.AutoScalingConfigurationArn
+      ObservabilityConfiguration:
+        ObservabilityEnabled: true
+        ObservabilityConfigurationArn: !GetAtt AppRunnerObservabilityConfig.ObservabilityConfigurationArn
+      InstanceConfiguration:
+        Cpu: !Sub '${EnvironmentConfig.${Environment}.AppRunnerCpu}'
+        Memory: !Sub '${EnvironmentConfig.${Environment}.AppRunnerMemory}'
+        InstanceRoleArn: !GetAtt AppRunnerInstanceRole.Arn
+      NetworkConfiguration:
+        EgressConfiguration:
+          EgressType: VPC
+          VpcConnectorArn: !GetAtt AppRunnerVpcConnector.VpcConnectorArn
+        IngressConfiguration:
+          IsPubliclyAccessible: true
+      HealthCheckConfiguration:
+        Protocol: HTTP
+        Path: /actuator/health/readiness
+        Interval: 10
+        Timeout: 5
+        HealthyThreshold: 2
+        UnhealthyThreshold: 3
+      SourceConfiguration:
+        AuthenticationConfiguration:
+          AccessRoleArn: !GetAtt AppRunnerEcrAccessRole.Arn
+        AutoDeploymentsEnabled: true
+        ImageRepository:
+          ImageIdentifier: !Sub '${EcrRepository.RepositoryUri}:${ContainerImageTag}'
+          ImageRepositoryType: ECR
+          ImageConfiguration:
+            Port: '8080'
+            RuntimeEnvironmentVariables:
+              - Name: SPRING_PROFILES_ACTIVE
+                Value: !Ref Environment
+              - Name: DB_HOST
+                Value: !GetAtt DatabaseInstance.Endpoint.Address
+              - Name: DB_PORT
+                Value: !GetAtt DatabaseInstance.Endpoint.Port
+              - Name: DB_NAME
+                Value: bookworm_db
+            RuntimeEnvironmentSecrets:
+              - Name: DB_USERNAME
+                Value: !Sub '${DatabaseSecret}:username::'
+              - Name: DB_PASSWORD
+                Value: !Sub '${DatabaseSecret}:password::'
+              - Name: JWT_SECRET
+                Value: !Sub '${ApplicationSecret}:JWT_SECRET::'
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Application
+          Value: !Ref AppName
+
+# ==============================================================================
+# Outputs
+# ==============================================================================
+Outputs:
+  AppRunnerServiceUrl:
+    Description: HTTPS URL of the deployed App Runner service
+    Value: !Sub 'https://${AppRunnerService.ServiceUrl}'
+    Export:
+      Name: !Sub '${AppName}-${Environment}-ServiceUrl'
+
+  AppRunnerServiceArn:
+    Description: ARN of the App Runner service
+    Value: !GetAtt AppRunnerService.ServiceArn
+
+  EcrRepositoryUri:
+    Description: URI of the Amazon ECR repository
+    Value: !GetAtt EcrRepository.RepositoryUri
+    Export:
+      Name: !Sub '${AppName}-${Environment}-EcrUri'
+
+  DatabaseEndpoint:
+    Description: JDBC connection endpoint for RDS PostgreSQL
+    Value: !GetAtt DatabaseInstance.Endpoint.Address
+    Export:
+      Name: !Sub '${AppName}-${Environment}-DbEndpoint'
+
+  DatabaseSecretArn:
+    Description: ARN of the AWS Secrets Manager Database Secret
+    Value: !Ref DatabaseSecret
+
+  KmsKeyArn:
+    Description: ARN of the Customer Managed KMS Key
+    Value: !GetAtt KmsEncryptionKey.Arn

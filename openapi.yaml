@@ -1,0 +1,2296 @@
+openapi: 3.1.0
+info:
+  title: Book Worm E-Commerce Platform API
+  description: |
+    Comprehensive RESTful API specification for the **Book Worm** online bookstore backend platform.
+    Provides complete endpoints for Authentication, Multi-Taxonomy Catalog Browsing, Customer Reviews (100-character limit),
+    Wishlist, Shopping Cart Steppers, Checkout, 48-Hour Order Cancellations, Multi-Tender Payments, and Shipping Logistics.
+  version: 1.0.0
+  contact:
+    name: Book Worm Engineering Team
+    email: support@bookworm.example.com
+servers:
+  - url: http://localhost:8080/api/v1
+    description: Local Development Server
+  - url: https://api.bookworm.example.com/api/v1
+    description: Production Environment
+
+tags:
+  - name: Authentication
+    description: User registration, login, token refresh, and session management.
+  - name: Users & Addresses
+    description: Customer profile and delivery address book management.
+  - name: Categories
+    description: 20-category taxonomy navigation.
+  - name: Authors
+    description: Author directory and biography details ("About the writer").
+  - name: Publishers
+    description: Book publishers directory.
+  - name: Books
+    description: Product catalog, multi-faceted filtering, and book details.
+  - name: Search
+    description: Full-text search across titles, authors, and ISBNs.
+  - name: Recommendations
+    description: Curated home shelves and product detail cross-sell recommendations.
+  - name: Reviews
+    description: Customer star ratings and 100-character reviews.
+  - name: Wishlist
+    description: Customer book wishlists.
+  - name: Cart
+    description: Shopping cart with quantity steppers and guest session merging.
+  - name: Orders
+    description: Checkout calculation, order placement, order history, 48-hour cancellation, and "Buy It Again".
+  - name: Payments
+    description: Multi-tender payment settlement, cards, UPI, and digital wallet.
+  - name: Shipping
+    description: Tentative delivery date (EDD) estimation and shipment tracking.
+  - name: Coupons & Loyalty
+    description: Promotional coupon validation and loyalty gift points.
+
+paths:
+  # ==========================================================================
+  # AUTHENTICATION
+  # ==========================================================================
+  /auth/register:
+    post:
+      tags: [Authentication]
+      summary: Register a new customer
+      description: Creates a new member account with email, password, and contact details.
+      operationId: registerUser
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '201':
+          description: User registered successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '400':
+          $ref: '#/components/responses/400BadRequest'
+        '409':
+          $ref: '#/components/responses/409Conflict'
+
+  /auth/login:
+    post:
+      tags: [Authentication]
+      summary: User login
+      description: Authenticates user credentials and issues a JWT token. Merges guest session cart if token provided.
+      operationId: loginUser
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '400':
+          $ref: '#/components/responses/400BadRequest'
+        '401':
+          $ref: '#/components/responses/401Unauthorized'
+
+  /auth/logout:
+    post:
+      tags: [Authentication]
+      summary: Logout user
+      description: Invalidates active JWT session token.
+      operationId: logoutUser
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Logged out successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Logged out successfully
+        '401':
+          $ref: '#/components/responses/401Unauthorized'
+
+  # ==========================================================================
+  # USERS & ADDRESSES
+  # ==========================================================================
+  /users/profile:
+    get:
+      tags: [Users & Addresses]
+      summary: Get current user profile
+      operationId: getCurrentUserProfile
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Profile retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfileResponse'
+        '401':
+          $ref: '#/components/responses/401Unauthorized'
+
+  /users/addresses:
+    get:
+      tags: [Users & Addresses]
+      summary: List saved delivery addresses
+      operationId: listUserAddresses
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: List of saved delivery addresses
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AddressResponse'
+        '401':
+          $ref: '#/components/responses/401Unauthorized'
+    post:
+      tags: [Users & Addresses]
+      summary: Add a new delivery address
+      operationId: addAddress
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddressCreateRequest'
+      responses:
+        '201':
+          description: Address created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AddressResponse'
+        '400':
+          $ref: '#/components/responses/400BadRequest'
+        '401':
+          $ref: '#/components/responses/401Unauthorized'
+
+  /users/addresses/{addressId}:
+    put:
+      tags: [Users & Addresses]
+      summary: Update a delivery address
+      operationId: updateAddress
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: addressId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddressCreateRequest'
+      responses:
+        '200':
+          description: Address updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AddressResponse'
+        '400':
+          $ref: '#/components/responses/400BadRequest'
+        '401':
+          $ref: '#/components/responses/401Unauthorized'
+        '403':
+          $ref: '#/components/responses/403Forbidden'
+        '404':
+          $ref: '#/components/responses/404NotFound'
+    delete:
+      tags: [Users & Addresses]
+      summary: Delete a delivery address
+      operationId: deleteAddress
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: addressId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Address deleted successfully
+        '401':
+          $ref: '#/components/responses/401Unauthorized'
+        '403':
+          $ref: '#/components/responses/403Forbidden'
+        '404':
+          $ref: '#/components/responses/404NotFound'
+
+  /users/addresses/{addressId}/default:
+    patch:
+      tags: [Users & Addresses]
+      summary: Set address as default
+      operationId: setDefaultAddress
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: addressId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Address marked as default
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AddressResponse'
+        '401':
+          $ref: '#/components/responses/401Unauthorized'
+        '403':
+          $ref: '#/components/responses/403Forbidden'
+        '404':
+          $ref: '#/components/responses/404NotFound'
+
+  # ==========================================================================
+  # CATEGORIES (20-Category Taxonomy)
+  # ==========================================================================
+  /categories:
+    get:
+      tags: [Categories]
+      summary: List all 20 book categories
+      description: Returns the structured category taxonomy for navigation and filtering.
+      operationId: listCategories
+      responses:
+        '200':
+          description: Categories retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CategoryResponse'
+
+  # ==========================================================================
+  # AUTHORS & PUBLISHERS
+  # ==========================================================================
+  /authors:
+    get:
+      tags: [Authors]
+      summary: List authors
+      operationId: listAuthors
+      parameters:
+        - $ref: '#/components/parameters/PageQueryParam'
+        - $ref: '#/components/parameters/SizeQueryParam'
+      responses:
+        '200':
+          description: Paginated authors list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthorPagedResponse'
+
+  /authors/{authorId}:
+    get:
+      tags: [Authors]
+      summary: Get author profile details
+      description: Returns author biography and associated book titles ("About the writer").
+      operationId: getAuthorById
+      parameters:
+        - name: authorId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Author details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthorDetailResponse'
+        '404':
+          $ref: '#/components/responses/404NotFound'
+
+  /publishers:
+    get:
+      tags: [Publishers]
+      summary: List publishers
+      operationId: listPublishers
+      responses:
+        '200':
+          description: List of publishers
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PublisherResponse'
+
+  # ==========================================================================
+  # BOOKS
+  # ==========================================================================
+  /books:
+    get:
+      tags: [Books]
+      summary: Browse and filter books
+      description: Multi-faceted book catalog query filtered by category, format, language, price range, and sort order.
+      operationId: listBooks
+      parameters:
+        - name: category
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Category slug or name
+        - name: language
+          in: query
+          required: false
+          schema:
+            type: string
+          example: English
+        - name: format
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [PAPERBACK, HARDCOVER, EBOOK]
+        - name: minPrice
+          in: query
+          required: false
+          schema:
+            type: number
+            minimum: 0
+        - name: maxPrice
+          in: query
+          required: false
+          schema:
+            type: number
+            minimum: 0
+        - name: sortBy
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [relevance, price_asc, price_desc, rating, newest]
+            default: relevance
+        - $ref: '#/components/parameters/PageQueryParam'
+        - $ref: '#/components/parameters/SizeQueryParam'
+      responses:
+        '200':
+          description: Paginated book list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BookPagedResponse'
+
+  /books/{bookId}:
+    get:
+      tags: [Books]
+      summary: Get book details (PDP)
+      description: Returns complete product metadata, author bio, publisher, rating, sales count, and delivery date.
+      operationId: getBookById
+      parameters:
+        - name: bookId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Book details retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BookDetailResponse'
+        '404':
+          $ref: '#/components/responses/404NotFound'
+
+  # ==========================================================================
+  # SEARCH
+  # ==========================================================================
+  /search:
+    get:
+      tags: [Search]
+      summary: Full-text search books
+      description: Keyword search across book title, author name, and ISBN with category/format filters.
+      operationId: searchBooks
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 100
+          description: Search keyword
+        - name: category
+          in: query
+          schema:
+            type: string
+        - name: format
+          in: query
+          schema:
+            type: string
+            enum: [PAPERBACK, HARDCOVER, EBOOK]
+        - $ref: '#/components/parameters/PageQueryParam'
+        - $ref: '#/components/parameters/SizeQueryParam'
+      responses:
+        '200':
+          description: Search results
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BookPagedResponse'
+        '400':
+          $ref: '#/components/responses/400BadRequest'
+
+  # ==========================================================================
+  # RECOMMENDATIONS
+  # ==========================================================================
+  /recommendations/for-you:
+    get:
+      tags: [Recommendations]
+      summary: Personalized recommendations
+      description: Returns "Recommended for You" books based on order history or trending titles.
+      operationId: getRecommendationsForYou
+      security:
+        - bearerAuth: []
+        - {}
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 6
+            maximum: 20
+      responses:
+        '200':
+          description: Recommended books
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/BookCardResponse'
+
+  /recommendations/bestsellers:
+    get:
+      tags: [Recommendations]
+      summary: Monthly bestsellers
+      description: Returns "Bestsellers this Month" sorted by sales velocity.
+      operationId: getBestsellers
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 6
+            maximum: 20
+      responses:
+        '200':
+          description: Bestseller books
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/BookCardResponse'
+
+  /recommendations/new-launches:
+    get:
+      tags: [Recommendations]
+      summary: New book launches
+      description: Returns newly cataloged book releases.
+      operationId: getNewLaunches
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 6
+            maximum: 20
+      responses:
+        '200':
+          description: New launch books
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/BookCardResponse'
+
+  /recommendations/related/{bookId}:
+    get:
+      tags: [Recommendations]
+      summary: Related reads (PDP cross-sell)
+      description: Returns related books for a specific title.
+      operationId: getRelatedReads
+      parameters:
+        - name: bookId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 3
+            maximum: 10
+      responses:
+        '200':
+          description: Related books list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/BookCardResponse'
+        '404':
+          $ref: '#/components/responses/404NotFound'
+
+  # ==========================================================================
+  # REVIEWS & RATINGS (100-character constraint)
+  # ==========================================================================
+  /books/{bookId}/reviews:
+    get:
+      tags: [Reviews]
+      summary: List reviews for a book
+      operationId: listBookReviews
+      parameters:
+        - name: bookId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/PageQueryParam'
+        - $ref: '#/components/parameters/SizeQueryParam'
+      responses:
+        '200':
+          description: Book reviews list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReviewPagedResponse'
+        '404':
+          $ref: '#/components/responses/404NotFound'
+    post:
+      tags: [Reviews]
+      summary: Submit a book review
+      description: Submits a 1-5 star rating and review comment strictly constrained to a maximum of 100 characters.
+      operationId: createBookReview
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: bookId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReviewCreateRequest'
+      responses:
+        '201':
+          description: Review submitted successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReviewResponse'
+        '400':
+          $ref: '#/components/responses/400BadRequest'
+        '401':
+          $ref: '#/components/responses/401Unauthorized'
+        '404':
+          $ref: '#/components/responses/404NotFound'
+
+  # ==========================================================================
+  # WISHLIST
+  # ==========================================================================
+  /wishlist:
+    get:
+      tags: [Wishlist]
+      summary: Get customer wishlist
+      operationId: getWishlist
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Customer wishlist
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WishlistResponse'
+        '401':
+          $ref: '#/components/responses/401Unauthorized'
+
+  /wishlist/{bookId}:
+    post:
+      tags: [Wishlist]
+      summary: Add book to wishlist
+      operationId: addToWishlist
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: bookId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '201':
+          description: Book added to wishlist
+        '401':
+          $ref: '#/components/responses/401Unauthorized'
+        '404':
+          $ref: '#/components/responses/404NotFound'
+    delete:
+      tags: [Wishlist]
+      summary: Remove book from wishlist
+      operationId: removeFromWishlist
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: bookId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Book removed from wishlist
+        '401':
+          $ref: '#/components/responses/401Unauthorized'
+
+  # ==========================================================================
+  # CART
+  # ==========================================================================
+  /cart:
+    get:
+      tags: [Cart]
+      summary: Get active shopping cart
+      description: Returns cart items and totals for authorized user or guest session token.
+      operationId: getActiveCart
+      parameters:
+        - $ref: '#/components/parameters/SessionTokenHeader'
+      security:
+        - bearerAuth: []
+        - {}
+      responses:
+        '200':
+          description: Active cart details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CartResponse'
+
+  /cart/items:
+    post:
+      tags: [Cart]
+      summary: Add book to cart
+      operationId: addItemToCart
+      parameters:
+        - $ref: '#/components/parameters/SessionTokenHeader'
+      security:
+        - bearerAuth: []
+        - {}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddToCartRequest'
+      responses:
+        '200':
+          description: Cart updated with new item
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CartResponse'
+        '400':
+          $ref: '#/components/responses/400BadRequest'
+        '404':
+          $ref: '#/components/responses/404NotFound'
+
+  /cart/items/{cartItemId}:
+    put:
+      tags: [Cart]
+      summary: Update cart item quantity (Stepper - 1 +)
+      operationId: updateCartItemQuantity
+      parameters:
+        - name: cartItemId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/SessionTokenHeader'
+      security:
+        - bearerAuth: []
+        - {}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateQuantityRequest'
+      responses:
+        '200':
+          description: Quantity updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CartResponse'
+        '400':
+          $ref: '#/components/responses/400BadRequest'
+        '404':
+          $ref: '#/components/responses/404NotFound'
+    delete:
+      tags: [Cart]
+      summary: Remove item from cart
+      operationId: removeCartItem
+      parameters:
+        - name: cartItemId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/SessionTokenHeader'
+      security:
+        - bearerAuth: []
+        - {}
+      responses:
+        '200':
+          description: Item removed from cart
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CartResponse'
+        '404':
+          $ref: '#/components/responses/404NotFound'
+
+  /cart/merge:
+    post:
+      tags: [Cart]
+      summary: Merge guest cart into member account
+      operationId: mergeGuestCart
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CartMergeRequest'
+      responses:
+        '200':
+          description: Merged cart result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CartResponse'
+        '401':
+          $ref: '#/components/responses/401Unauthorized'
+
+  # ==========================================================================
+  # ORDERS & CHECKOUT
+  # ==========================================================================
+  /orders/calculate:
+    post:
+      tags: [Orders]
+      summary: Pre-checkout order pricing calculation
+      description: Computes item subtotal, tax amount, delivery charge, coupon discount, and total payable before placing order.
+      operationId: calculateOrderTotal
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrderCalculateRequest'
+      responses:
+        '200':
+          description: Calculated order breakdown
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderPriceCalculationResponse'
+        '400':
+          $ref: '#/components/responses/400BadRequest'
+        '401':
+          $ref: '#/components/responses/401Unauthorized'
+
+  /orders/checkout:
+    post:
+      tags: [Orders]
+      summary: Place order (Checkout)
+      description: Creates a new pending order from active cart, applies coupon/points, and returns order summary.
+      operationId: checkoutOrder
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKeyHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrderCheckoutRequest'
+      responses:
+        '201':
+          description: Order created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderCheckoutResponse'
+        '400':
+          $ref: '#/components/responses/400BadRequest'
+        '401':
+          $ref: '#/components/responses/401Unauthorized'
+
+  /orders:
+    get:
+      tags: [Orders]
+      summary: List order history (My Orders)
+      operationId: listOrders
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PageQueryParam'
+        - $ref: '#/components/parameters/SizeQueryParam'
+      responses:
+        '200':
+          description: Paginated order history
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderPagedResponse'
+        '401':
+          $ref: '#/components/responses/401Unauthorized'
+
+  /orders/{orderId}:
+    get:
+      tags: [Orders]
+      summary: Get order details
+      operationId: getOrderById
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Order details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderDetailResponse'
+        '401':
+          $ref: '#/components/responses/401Unauthorized'
+        '404':
+          $ref: '#/components/responses/404NotFound'
+
+  /orders/{orderId}/cancel:
+    post:
+      tags: [Orders]
+      summary: Cancel order (48-Hour Cancellation Rule)
+      description: Cancels order if within the configurable 48-hour creation window and not yet dispatched, triggering an automated refund.
+      operationId: cancelOrder
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CancelOrderRequest'
+      responses:
+        '200':
+          description: Order cancelled successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CancelOrderResponse'
+        '400':
+          description: Cancellation window expired or order already dispatched
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+        '401':
+          $ref: '#/components/responses/401Unauthorized'
+        '404':
+          $ref: '#/components/responses/404NotFound'
+
+  /orders/{orderId}/buy-again:
+    post:
+      tags: [Orders]
+      summary: Buy It Again (Reorder)
+      description: Adds all available items from a historical order into the active cart.
+      operationId: buyItAgain
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Items added to cart
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CartResponse'
+        '401':
+          $ref: '#/components/responses/401Unauthorized'
+        '404':
+          $ref: '#/components/responses/404NotFound'
+
+  # ==========================================================================
+  # PAYMENTS & WALLET
+  # ==========================================================================
+  /payments/initiate:
+    post:
+      tags: [Payments]
+      summary: Initiate and complete payment
+      description: Processes payment across Credit Card, Debit Card, UPI, or Wallet.
+      operationId: initiatePayment
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKeyHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PaymentInitiateRequest'
+      responses:
+        '200':
+          description: Payment processed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentInitiateResponse'
+        '400':
+          $ref: '#/components/responses/400BadRequest'
+        '401':
+          $ref: '#/components/responses/401Unauthorized'
+
+  /payments/wallet:
+    get:
+      tags: [Payments]
+      summary: Get user wallet balance
+      operationId: getWalletBalance
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Wallet balance details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WalletBalanceResponse'
+        '401':
+          $ref: '#/components/responses/401Unauthorized'
+
+  # ==========================================================================
+  # SHIPPING & LOGISTICS
+  # ==========================================================================
+  /shipping/edd:
+    get:
+      tags: [Shipping]
+      summary: Calculate Estimated Delivery Date (EDD)
+      description: Computes tentative delivery date based on postal PIN code.
+      operationId: calculateEdd
+      parameters:
+        - name: pinCode
+          in: query
+          required: true
+          schema:
+            type: string
+            pattern: '^[1-9][0-9]{5}$'
+          example: '560001'
+      responses:
+        '200':
+          description: EDD calculation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EDDResponse'
+        '400':
+          $ref: '#/components/responses/400BadRequest'
+
+  /shipping/track/{orderId}:
+    get:
+      tags: [Shipping]
+      summary: Track order shipment
+      operationId: trackShipmentByOrderId
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Shipment tracking milestones
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ShipmentTrackingResponse'
+        '401':
+          $ref: '#/components/responses/401Unauthorized'
+        '404':
+          $ref: '#/components/responses/404NotFound'
+
+  # ==========================================================================
+  # COUPONS & LOYALTY
+  # ==========================================================================
+  /coupons/validate:
+    post:
+      tags: [Coupons & Loyalty]
+      summary: Validate promo coupon code
+      operationId: validateCoupon
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CouponValidateRequest'
+      responses:
+        '200':
+          description: Coupon validation result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CouponValidationResponse'
+        '400':
+          $ref: '#/components/responses/400BadRequest'
+
+  /loyalty/points:
+    get:
+      tags: [Coupons & Loyalty]
+      summary: Get loyalty gift points balance
+      operationId: getLoyaltyPoints
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Loyalty points balance
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoyaltyPointsResponse'
+        '401':
+          $ref: '#/components/responses/401Unauthorized'
+
+# ============================================================================
+# COMPONENTS
+# ============================================================================
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Enter JWT Bearer token format 'Bearer <token>'
+
+  parameters:
+    PageQueryParam:
+      name: page
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 0
+        default: 0
+      description: Zero-based page index
+
+    SizeQueryParam:
+      name: size
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 12
+      description: Page size
+
+    SessionTokenHeader:
+      name: X-Session-Token
+      in: header
+      required: false
+      schema:
+        type: string
+        format: uuid
+      description: Guest user session identifier token
+
+    IdempotencyKeyHeader:
+      name: Idempotency-Key
+      in: header
+      required: false
+      schema:
+        type: string
+        format: uuid
+      description: Unique UUID key to guarantee request idempotency
+
+  responses:
+    400BadRequest:
+      description: Bad Request / Validation Failure
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetail'
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetail'
+
+    401Unauthorized:
+      description: Unauthorized / Missing or Invalid Token
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetail'
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetail'
+
+    403Forbidden:
+      description: Forbidden / Insufficient Privileges
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetail'
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetail'
+
+    404NotFound:
+      description: Resource Not Found
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetail'
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetail'
+
+    409Conflict:
+      description: Resource Conflict (e.g. Email duplicate)
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetail'
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetail'
+
+    429TooManyRequests:
+      description: Rate Limit Exceeded
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetail'
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetail'
+
+  schemas:
+    # ------------------------------------------------------------------------
+    # Error Model (RFC 7807)
+    # ------------------------------------------------------------------------
+    ProblemDetail:
+      type: object
+      required: [timestamp, status, errorCode, message, path]
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+          example: '2025-07-21T10:30:00Z'
+        status:
+          type: integer
+          example: 400
+        errorCode:
+          type: string
+          example: VALIDATION_FAILED
+        message:
+          type: string
+          example: Invalid request payload
+        path:
+          type: string
+          example: /api/v1/books/reviews
+        errors:
+          type: array
+          items:
+            $ref: '#/components/schemas/FieldError'
+
+    FieldError:
+      type: object
+      required: [field, message]
+      properties:
+        field:
+          type: string
+          example: reviewText
+        rejectedValue:
+          type: string
+          nullable: true
+        message:
+          type: string
+          example: Review text must not exceed 100 characters
+
+    PageMetadata:
+      type: object
+      required: [page, size, totalElements, totalPages, isFirst, isLast]
+      properties:
+        page:
+          type: integer
+          example: 0
+        size:
+          type: integer
+          example: 12
+        totalElements:
+          type: integer
+          example: 48
+        totalPages:
+          type: integer
+          example: 4
+        isFirst:
+          type: boolean
+          example: true
+        isLast:
+          type: boolean
+          example: false
+        hasNext:
+          type: boolean
+          example: true
+        hasPrevious:
+          type: boolean
+          example: false
+
+    # ------------------------------------------------------------------------
+    # Authentication Models
+    # ------------------------------------------------------------------------
+    RegisterRequest:
+      type: object
+      required: [email, password, firstName, lastName]
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 255
+          example: user@example.com
+        password:
+          type: string
+          format: password
+          minLength: 8
+          maxLength: 100
+          example: SecurePassword123!
+        firstName:
+          type: string
+          maxLength: 100
+          example: John
+        lastName:
+          type: string
+          maxLength: 100
+          example: Smith
+        phone:
+          type: string
+          pattern: '^\+?[0-9]{10,15}$'
+          example: '+919876543210'
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+          example: user@example.com
+        password:
+          type: string
+          format: password
+          example: SecurePassword123!
+        guestSessionToken:
+          type: string
+          format: uuid
+          nullable: true
+          example: 'd4e2a1b0-8c9f-4e3a-9f1a-5b2c3d4e5f6a'
+
+    AuthResponse:
+      type: object
+      required: [accessToken, tokenType, expiresIn, user]
+      properties:
+        accessToken:
+          type: string
+          example: 'eyJhbGciOiJSUzI1NiIs...'
+        tokenType:
+          type: string
+          example: Bearer
+        expiresIn:
+          type: integer
+          example: 900
+        user:
+          $ref: '#/components/schemas/UserSummary'
+
+    UserSummary:
+      type: object
+      required: [userId, email, firstName, lastName, role]
+      properties:
+        userId:
+          type: string
+          format: uuid
+        email:
+          type: string
+        firstName:
+          type: string
+        lastName:
+          type: string
+        role:
+          type: string
+          example: ROLE_MEMBER
+
+    UserProfileResponse:
+      type: object
+      required: [userId, email, firstName, lastName, role]
+      properties:
+        userId:
+          type: string
+          format: uuid
+        email:
+          type: string
+        firstName:
+          type: string
+        lastName:
+          type: string
+        phone:
+          type: string
+          nullable: true
+        role:
+          type: string
+
+    # ------------------------------------------------------------------------
+    # Address Models
+    # ------------------------------------------------------------------------
+    AddressCreateRequest:
+      type: object
+      required: [firstName, lastName, addressLine1, city, state, country, pinCode, phoneNumber]
+      properties:
+        firstName:
+          type: string
+          maxLength: 100
+          example: John
+        lastName:
+          type: string
+          maxLength: 100
+          example: Smith
+        addressLine1:
+          type: string
+          maxLength: 255
+          example: 'Flat 402, Sunshine Heights'
+        addressLine2:
+          type: string
+          maxLength: 255
+          nullable: true
+          example: 'MG Road'
+        city:
+          type: string
+          maxLength: 100
+          example: Bengaluru
+        state:
+          type: string
+          maxLength: 100
+          example: Karnataka
+        country:
+          type: string
+          maxLength: 100
+          default: India
+          example: India
+        pinCode:
+          type: string
+          pattern: '^[1-9][0-9]{5}$'
+          example: '560001'
+        phoneNumber:
+          type: string
+          pattern: '^\+?[0-9]{10,15}$'
+          example: '+919876543210'
+        isDefault:
+          type: boolean
+          default: false
+
+    AddressResponse:
+      type: object
+      required: [addressId, firstName, lastName, addressLine1, city, state, country, pinCode, phoneNumber, isDefault]
+      properties:
+        addressId:
+          type: string
+          format: uuid
+        firstName:
+          type: string
+        lastName:
+          type: string
+        addressLine1:
+          type: string
+        addressLine2:
+          type: string
+          nullable: true
+        city:
+          type: string
+        state:
+          type: string
+        country:
+          type: string
+        pinCode:
+          type: string
+        phoneNumber:
+          type: string
+        isDefault:
+          type: boolean
+
+    # ------------------------------------------------------------------------
+    # Category, Author, Publisher Models
+    # ------------------------------------------------------------------------
+    CategoryResponse:
+      type: object
+      required: [categoryId, name, slug, displayOrder]
+      properties:
+        categoryId:
+          type: string
+          format: uuid
+        name:
+          type: string
+          example: Self-help
+        slug:
+          type: string
+          example: self-help
+        displayOrder:
+          type: integer
+          example: 7
+
+    AuthorSummaryResponse:
+      type: object
+      required: [authorId, name]
+      properties:
+        authorId:
+          type: string
+          format: uuid
+        name:
+          type: string
+          example: Daniel Reed
+        avatarUrl:
+          type: string
+          nullable: true
+          example: https://cdn.bookworm.com/authors/daniel-reed.jpg
+
+    AuthorDetailResponse:
+      type: object
+      required: [authorId, name, books]
+      properties:
+        authorId:
+          type: string
+          format: uuid
+        name:
+          type: string
+        bio:
+          type: string
+          nullable: true
+        avatarUrl:
+          type: string
+          nullable: true
+        books:
+          type: array
+          items:
+            $ref: '#/components/schemas/BookCardResponse'
+
+    PublisherResponse:
+      type: object
+      required: [publisherId, name]
+      properties:
+        publisherId:
+          type: string
+          format: uuid
+        name:
+          type: string
+          example: ABC Publishers
+
+    # ------------------------------------------------------------------------
+    # Book Models
+    # ------------------------------------------------------------------------
+    BookCardResponse:
+      type: object
+      required: [bookId, title, authorName, authorId, price, format, categoryName, averageRating, tentativeDeliveryDate]
+      properties:
+        bookId:
+          type: string
+          format: uuid
+        title:
+          type: string
+          example: Joy of Minimalism
+        authorName:
+          type: string
+          example: Daniel Reed
+        authorId:
+          type: string
+          format: uuid
+        price:
+          type: number
+          format: double
+          example: 149.00
+        format:
+          type: string
+          enum: [PAPERBACK, HARDCOVER, EBOOK]
+          example: PAPERBACK
+        categoryName:
+          type: string
+          example: Self-help
+        coverImageUrl:
+          type: string
+          nullable: true
+        averageRating:
+          type: number
+          format: double
+          example: 4.8
+        tentativeDeliveryDate:
+          type: string
+          format: date
+          example: '2025-07-21'
+
+    BookDetailResponse:
+      type: object
+      required: [bookId, title, isbn, author, publisher, category, format, price, language, salesCount, averageRating, ratingCount, stockQuantity, tentativeDeliveryDate]
+      properties:
+        bookId:
+          type: string
+          format: uuid
+        title:
+          type: string
+        isbn:
+          type: string
+          example: '978-0143127741'
+        author:
+          $ref: '#/components/schemas/AuthorSummaryResponse'
+        publisher:
+          $ref: '#/components/schemas/PublisherResponse'
+        category:
+          $ref: '#/components/schemas/CategoryResponse'
+        format:
+          type: string
+          enum: [PAPERBACK, HARDCOVER, EBOOK]
+        price:
+          type: number
+          format: double
+          example: 149.00
+        language:
+          type: string
+          example: English
+        description:
+          type: string
+          nullable: true
+        salesCount:
+          type: integer
+          example: 145
+        averageRating:
+          type: number
+          format: double
+          example: 4.8
+        ratingCount:
+          type: integer
+          example: 24
+        stockQuantity:
+          type: integer
+          example: 50
+        coverImageUrl:
+          type: string
+          nullable: true
+        tentativeDeliveryDate:
+          type: string
+          format: date
+          example: '2025-07-21'
+
+    BookPagedResponse:
+      allOf:
+        - $ref: '#/components/schemas/PageMetadata'
+        - type: object
+          required: [content]
+          properties:
+            content:
+              type: array
+              items:
+                $ref: '#/components/schemas/BookCardResponse'
+
+    AuthorPagedResponse:
+      allOf:
+        - $ref: '#/components/schemas/PageMetadata'
+        - type: object
+          required: [content]
+          properties:
+            content:
+              type: array
+              items:
+                $ref: '#/components/schemas/AuthorSummaryResponse'
+
+    # ------------------------------------------------------------------------
+    # Review Models (Strict 100-character constraint)
+    # ------------------------------------------------------------------------
+    ReviewCreateRequest:
+      type: object
+      required: [rating, reviewText]
+      properties:
+        rating:
+          type: integer
+          minimum: 1
+          maximum: 5
+          example: 5
+        reviewText:
+          type: string
+          minLength: 1
+          maxLength: 100
+          description: Written review comment strictly capped at 100 characters.
+          example: Inspiring read on decluttering life and finding clarity.
+
+    ReviewResponse:
+      type: object
+      required: [reviewId, reviewerName, rating, reviewText, createdAt]
+      properties:
+        reviewId:
+          type: string
+          format: uuid
+        reviewerName:
+          type: string
+          example: John Smith
+        rating:
+          type: integer
+          example: 5
+        reviewText:
+          type: string
+          maxLength: 100
+        createdAt:
+          type: string
+          format: date-time
+
+    ReviewPagedResponse:
+      allOf:
+        - $ref: '#/components/schemas/PageMetadata'
+        - type: object
+          required: [content]
+          properties:
+            content:
+              type: array
+              items:
+                $ref: '#/components/schemas/ReviewResponse'
+
+    # ------------------------------------------------------------------------
+    # Wishlist Models
+    # ------------------------------------------------------------------------
+    WishlistResponse:
+      type: object
+      required: [wishlistId, items]
+      properties:
+        wishlistId:
+          type: string
+          format: uuid
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/WishlistItemResponse'
+
+    WishlistItemResponse:
+      type: object
+      required: [wishlistItemId, bookId, title, authorName, price, format, addedAt]
+      properties:
+        wishlistItemId:
+          type: string
+          format: uuid
+        bookId:
+          type: string
+          format: uuid
+        title:
+          type: string
+        authorName:
+          type: string
+        price:
+          type: number
+          format: double
+        format:
+          type: string
+        coverImageUrl:
+          type: string
+          nullable: true
+        addedAt:
+          type: string
+          format: date-time
+
+    # ------------------------------------------------------------------------
+    # Cart Models
+    # ------------------------------------------------------------------------
+    AddToCartRequest:
+      type: object
+      required: [bookId, quantity]
+      properties:
+        bookId:
+          type: string
+          format: uuid
+        quantity:
+          type: integer
+          minimum: 1
+          default: 1
+
+    UpdateQuantityRequest:
+      type: object
+      required: [quantity]
+      properties:
+        quantity:
+          type: integer
+          minimum: 1
+          example: 2
+
+    CartMergeRequest:
+      type: object
+      required: [guestSessionToken]
+      properties:
+        guestSessionToken:
+          type: string
+          format: uuid
+
+    CartResponse:
+      type: object
+      required: [cartId, totalItems, subtotal, items]
+      properties:
+        cartId:
+          type: string
+          format: uuid
+        totalItems:
+          type: integer
+          example: 2
+        subtotal:
+          type: number
+          format: double
+          example: 508.00
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/CartItemResponse'
+
+    CartItemResponse:
+      type: object
+      required: [cartItemId, bookId, title, authorName, format, unitPrice, quantity, lineTotal, tentativeDeliveryDate]
+      properties:
+        cartItemId:
+          type: string
+          format: uuid
+        bookId:
+          type: string
+          format: uuid
+        title:
+          type: string
+        authorName:
+          type: string
+        format:
+          type: string
+        unitPrice:
+          type: number
+          format: double
+          example: 149.00
+        quantity:
+          type: integer
+          example: 1
+        lineTotal:
+          type: number
+          format: double
+          example: 149.00
+        coverImageUrl:
+          type: string
+          nullable: true
+        tentativeDeliveryDate:
+          type: string
+          format: date
+
+    # ------------------------------------------------------------------------
+    # Order Models
+    # ------------------------------------------------------------------------
+    OrderCalculateRequest:
+      type: object
+      required: [shippingAddressId]
+      properties:
+        shippingAddressId:
+          type: string
+          format: uuid
+        couponCode:
+          type: string
+          nullable: true
+          example: SUMMER100
+        redeemGiftPoints:
+          type: integer
+          default: 0
+          minimum: 0
+
+    OrderPriceCalculationResponse:
+      type: object
+      required: [itemCount, subtotal, taxAmount, deliveryCharge, isFreeDelivery, discountAmount, totalPayableAmount]
+      properties:
+        itemCount:
+          type: integer
+          example: 2
+        subtotal:
+          type: number
+          format: double
+          example: 508.00
+        taxAmount:
+          type: number
+          format: double
+          example: 62.00
+        deliveryCharge:
+          type: number
+          format: double
+          example: 0.00
+        isFreeDelivery:
+          type: boolean
+          example: true
+        couponCodeApplied:
+          type: string
+          nullable: true
+          example: SUMMER100
+        discountAmount:
+          type: number
+          format: double
+          example: 100.00
+        pointsDiscount:
+          type: number
+          format: double
+          example: 0.00
+        totalPayableAmount:
+          type: number
+          format: double
+          example: 470.00
+
+    OrderCheckoutRequest:
+      type: object
+      required: [shippingAddressId]
+      properties:
+        shippingAddressId:
+          type: string
+          format: uuid
+        couponCode:
+          type: string
+          nullable: true
+        redeemGiftPoints:
+          type: integer
+          default: 0
+
+    OrderCheckoutResponse:
+      type: object
+      required: [orderId, orderNumber, status, subtotal, taxAmount, deliveryCharge, discountAmount, totalPayableAmount, tentativeDeliveryDate]
+      properties:
+        orderId:
+          type: string
+          format: uuid
+        orderNumber:
+          type: string
+          example: BW-2025-00124
+        status:
+          type: string
+          example: PENDING_PAYMENT
+        subtotal:
+          type: number
+          format: double
+          example: 508.00
+        taxAmount:
+          type: number
+          format: double
+          example: 62.00
+        deliveryCharge:
+          type: number
+          format: double
+          example: 0.00
+        discountAmount:
+          type: number
+          format: double
+          example: 100.00
+        totalPayableAmount:
+          type: number
+          format: double
+          example: 470.00
+        tentativeDeliveryDate:
+          type: string
+          format: date
+          example: '2025-07-21'
+
+    OrderSummaryResponse:
+      type: object
+      required: [orderId, orderNumber, status, totalAmount, itemCount, tentativeDeliveryDate, createdAt, isCancellable]
+      properties:
+        orderId:
+          type: string
+          format: uuid
+        orderNumber:
+          type: string
+        status:
+          type: string
+        totalAmount:
+          type: number
+          format: double
+        itemCount:
+          type: integer
+        tentativeDeliveryDate:
+          type: string
+          format: date
+        createdAt:
+          type: string
+          format: date-time
+        isCancellable:
+          type: boolean
+          description: True if order creation timestamp is within the 48-hour window and unfulfilled.
+
+    OrderDetailResponse:
+      type: object
+      required: [orderId, orderNumber, status, subtotal, taxAmount, deliveryCharge, discountAmount, totalAmount, tentativeDeliveryDate, createdAt, isCancellable, shippingAddress, items]
+      properties:
+        orderId:
+          type: string
+          format: uuid
+        orderNumber:
+          type: string
+        status:
+          type: string
+        subtotal:
+          type: number
+          format: double
+        taxAmount:
+          type: number
+          format: double
+        deliveryCharge:
+          type: number
+          format: double
+        discountAmount:
+          type: number
+          format: double
+        totalAmount:
+          type: number
+          format: double
+        tentativeDeliveryDate:
+          type: string
+          format: date
+        createdAt:
+          type: string
+          format: date-time
+        isCancellable:
+          type: boolean
+        shippingAddress:
+          $ref: '#/components/schemas/AddressResponse'
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/OrderItemResponse'
+
+    OrderItemResponse:
+      type: object
+      required: [bookId, bookTitle, bookFormat, quantity, unitPrice, totalPrice]
+      properties:
+        bookId:
+          type: string
+          format: uuid
+        bookTitle:
+          type: string
+        bookFormat:
+          type: string
+        quantity:
+          type: integer
+        unitPrice:
+          type: number
+          format: double
+        totalPrice:
+          type: number
+          format: double
+
+    CancelOrderRequest:
+      type: object
+      properties:
+        reason:
+          type: string
+          maxLength: 255
+          example: Changed my mind
+
+    CancelOrderResponse:
+      type: object
+      required: [orderId, status, cancelledAt, refundInitiated, message]
+      properties:
+        orderId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          example: CANCELLED
+        cancelledAt:
+          type: string
+          format: date-time
+        refundInitiated:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: Order successfully cancelled and refund initiated.
+
+    OrderPagedResponse:
+      allOf:
+        - $ref: '#/components/schemas/PageMetadata'
+        - type: object
+          required: [content]
+          properties:
+            content:
+              type: array
+              items:
+                $ref: '#/components/schemas/OrderSummaryResponse'
+
+    # ------------------------------------------------------------------------
+    # Payment Models
+    # ------------------------------------------------------------------------
+    CardDetailsDto:
+      type: object
+      required: [cardNumber, nameOnCard, expiryMonth, expiryYear, cvv]
+      properties:
+        cardNumber:
+          type: string
+          pattern: '^[0-9]{13,19}$'
+          example: '4111222233334444'
+        nameOnCard:
+          type: string
+          example: John Smith
+        expiryMonth:
+          type: string
+          pattern: '^(0[1-9]|1[0-2])$'
+          example: '12'
+        expiryYear:
+          type: string
+          pattern: '^20[2-9][0-9]$'
+          example: '2028'
+        cvv:
+          type: string
+          pattern: '^[0-9]{3,4}$'
+          example: '123'
+
+    PaymentInitiateRequest:
+      type: object
+      required: [orderId, paymentMethod, amount]
+      properties:
+        orderId:
+          type: string
+          format: uuid
+        paymentMethod:
+          type: string
+          enum: [CREDIT_CARD, DEBIT_CARD, UPI, WALLET]
+          example: CREDIT_CARD
+        amount:
+          type: number
+          format: double
+          minimum: 0.01
+          example: 470.00
+        cardDetails:
+          $ref: '#/components/schemas/CardDetailsDto'
+
+    PaymentInitiateResponse:
+      type: object
+      required: [transactionId, orderId, status, message]
+      properties:
+        transactionId:
+          type: string
+          format: uuid
+        orderId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          example: SUCCESS
+        gatewayRefId:
+          type: string
+          nullable: true
+          example: PG_TXN_987654321
+        message:
+          type: string
+          example: Payment completed successfully
+
+    WalletBalanceResponse:
+      type: object
+      required: [walletId, balance, currencyCode]
+      properties:
+        walletId:
+          type: string
+          format: uuid
+        balance:
+          type: number
+          format: double
+          example: 250.00
+        currencyCode:
+          type: string
+          default: INR
+
+    # ------------------------------------------------------------------------
+    # Shipping Models
+    # ------------------------------------------------------------------------
+    EDDResponse:
+      type: object
+      required: [pinCode, tentativeDeliveryDate, deliveryDays, isServiceable]
+      properties:
+        pinCode:
+          type: string
+          example: '560001'
+        tentativeDeliveryDate:
+          type: string
+          format: date
+          example: '2025-07-21'
+        deliveryDays:
+          type: integer
+          example: 2
+        isServiceable:
+          type: boolean
+          example: true
+
+    ShipmentTrackingResponse:
+      type: object
+      required: [shipmentId, carrierName, trackingNumber, status, estimatedDeliveryDate, events]
+      properties:
+        shipmentId:
+          type: string
+          format: uuid
+        carrierName:
+          type: string
+          example: BlueDart Express
+        trackingNumber:
+          type: string
+          example: BD-9876543210
+        status:
+          type: string
+          example: IN_TRANSIT
+        estimatedDeliveryDate:
+          type: string
+          format: date
+        events:
+          type: array
+          items:
+            $ref: '#/components/schemas/TrackingEventResponse'
+
+    TrackingEventResponse:
+      type: object
+      required: [eventStatus, timestamp]
+      properties:
+        eventStatus:
+          type: string
+          example: DISPATCHED
+        location:
+          type: string
+          nullable: true
+          example: Bengaluru Central Hub
+        timestamp:
+          type: string
+          format: date-time
+        description:
+          type: string
+          nullable: true
+          example: Package picked up by carrier
+
+    # ------------------------------------------------------------------------
+    # Coupon & Loyalty Models
+    # ------------------------------------------------------------------------
+    CouponValidateRequest:
+      type: object
+      required: [code, cartSubtotal]
+      properties:
+        code:
+          type: string
+          example: SUMMER100
+        cartSubtotal:
+          type: number
+          format: double
+          minimum: 0
+          example: 508.00
+
+    CouponValidationResponse:
+      type: object
+      required: [code, isValid, discountType, discountValue, calculatedDiscount, message]
+      properties:
+        code:
+          type: string
+          example: SUMMER100
+        isValid:
+          type: boolean
+          example: true
+        discountType:
+          type: string
+          enum: [PERCENTAGE, FIXED_AMOUNT]
+          example: FIXED_AMOUNT
+        discountValue:
+          type: number
+          format: double
+          example: 100.00
+        calculatedDiscount:
+          type: number
+          format: double
+          example: 100.00
+        message:
+          type: string
+          example: Coupon applied successfully
+
+    LoyaltyPointsResponse:
+      type: object
+      required: [pointsBalance, conversionRate, monetaryValue]
+      properties:
+        pointsBalance:
+          type: integer
+          example: 150
+        conversionRate:
+          type: number
+          format: double
+          example: 1.00
+        monetaryValue:
+          type: number
+          format: double
+          example: 150.00

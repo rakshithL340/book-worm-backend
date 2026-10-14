@@ -1,0 +1,30 @@
+[
+  {
+    "ParameterKey": "Environment",
+    "ParameterValue": "prod"
+  },
+  {
+    "ParameterKey": "AppName",
+    "ParameterValue": "book-worm-backend"
+  },
+  {
+    "ParameterKey": "VpcId",
+    "ParameterValue": "vpc-0123456789abcdef0"
+  },
+  {
+    "ParameterKey": "PrivateAppSubnetIds",
+    "ParameterValue": "subnet-0aaa1111bbbb2222c,subnet-0ddd3333eeee4444f"
+  },
+  {
+    "ParameterKey": "IsolatedDbSubnetIds",
+    "ParameterValue": "subnet-0111222233334444a,subnet-0555666677778888b"
+  },
+  {
+    "ParameterKey": "ContainerImageTag",
+    "ParameterValue": "v1.0.0"
+  },
+  {
+    "ParameterKey": "DbAllocatedStorageGB",
+    "ParameterValue": "100"
+  }
+]

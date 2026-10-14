@@ -1,0 +1,26 @@
+package com.bookworm.order.dto;
+
+import jakarta.validation.constraints.NotNull;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
+
+import java.util.UUID;
+
+@Getter
+@Setter
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+public class OrderCheckoutRequest {
+
+    @NotNull(message = "Shipping address ID is required")
+    private UUID shippingAddressId;
+
+    private String couponCode;
+
+    @Builder.Default
+    private Integer redeemGiftPoints = 0;
+}

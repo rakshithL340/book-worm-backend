@@ -1,0 +1,93 @@
+version: '3.8'
+
+services:
+  # ============================================================================
+  # PostgreSQL Database Service (Red Hat Enterprise Linux 9 / UBI 9 Base)
+  # ============================================================================
+  postgres:
+    image: registry.access.redhat.com/rhel9/postgresql-15:latest
+    container_name: bookworm-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME:-bookworm_db}
+      POSTGRES_USER: ${DB_USERNAME:-bookworm_user}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-bookworm_secret_pass}
+      PGDATA: /var/lib/pgsql/data/userdata
+    ports:
+      # Bound to localhost (127.0.0.1) strictly for host security compliance
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres_data:/var/lib/pgsql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME:-bookworm_user} -d ${DB_NAME:-bookworm_db} -h 127.0.0.1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - bookworm-network
+
+  # ============================================================================
+  # Flyway Migration Job (Optional Standalone Runner - Spring Boot also runs Flyway)
+  # ============================================================================
+  flyway:
+    image: flyway/flyway:10-alpine
+    container_name: bookworm-flyway
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      FLYWAY_URL: jdbc:postgresql://postgres:5432/${DB_NAME:-bookworm_db}
+      FLYWAY_USER: ${DB_USERNAME:-bookworm_user}
+      FLYWAY_PASSWORD: ${DB_PASSWORD:-bookworm_secret_pass}
+      FLYWAY_CONNECT_RETRIES: 60
+      FLYWAY_BASELINE_ON_MIGRATE: "true"
+      FLYWAY_LOCATIONS: filesystem:/flyway/sql
+    volumes:
+      - ./src/main/resources/db/migration:/flyway/sql:ro
+    command: migrate
+    networks:
+      - bookworm-network
+    profiles:
+      - migration-only
+
+  # ============================================================================
+  # Book Worm Spring Boot 3 Backend Service
+  # ============================================================================
+  book-worm-backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: bookworm-backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ${DB_NAME:-bookworm_db}
+      DB_USERNAME: ${DB_USERNAME:-bookworm_user}
+      DB_PASSWORD: ${DB_PASSWORD:-bookworm_secret_pass}
+      JWT_SECRET: ${JWT_SECRET:-bookworm-production-secure-jwt-signing-secret-key-must-be-256-bits-minimum!}
+      SERVER_PORT: 8080
+    ports:
+      # Bound to localhost (127.0.0.1) for local host access
+      - "127.0.0.1:8080:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://127.0.0.1:8080/actuator/health/readiness || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+    networks:
+      - bookworm-network
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  bookworm-network:
+    driver: bridge

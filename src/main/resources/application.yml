@@ -1,0 +1,88 @@
+server:
+  port: 8080
+  address: 0.0.0.0
+  shutdown: graceful
+
+spring:
+  application:
+    name: book-worm-backend
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:default}
+  
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:bookworm_db}?sslmode=disable
+    username: ${DB_USERNAME:bookworm_user}
+    password: ${DB_PASSWORD:bookworm_secret_pass}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      pool-name: BookWormHikariCP
+      maximum-pool-size: 15
+      minimum-idle: 5
+      idle-timeout: 300000
+      max-lifetime: 1800000
+      connection-timeout: 20000
+      leak-detection-threshold: 30000
+
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: false
+        show_sql: false
+        jdbc:
+          batch_size: 25
+          order_inserts: true
+          order_updates: true
+
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    baseline-version: 0
+    locations: classpath:db/migration
+    table: flyway_schema_history
+    validate-on-migrate: true
+
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
+    deserialization:
+      fail-on-unknown-properties: false
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+      base-path: /actuator
+  endpoint:
+    health:
+      show-details: when_authorized
+      probes:
+        enabled: true
+      group:
+        liveness:
+          include: livenessState
+        readiness:
+          include: readinessState,db,diskSpace
+  health:
+    livenessstate:
+      enabled: true
+    readinessstate:
+      enabled: true
+
+app:
+  jwt:
+    secret: ${JWT_SECRET:bookworm-production-secure-jwt-signing-secret-key-must-be-256-bits-minimum!}
+    access-token-expiration-ms: 86400000 # 24 hours
+    refresh-token-expiration-ms: 604800000 # 7 days
+    issuer: bookworm-api
+
+logging:
+  level:
+    root: INFO
+    com.bookworm: INFO
+    org.springframework.security: WARN
+    org.flywaydb: INFO
